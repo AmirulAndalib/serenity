@@ -36,6 +36,12 @@ public:
     u8 const* data() const { return m_buffer.data(); }
     size_t size() const { return m_buffer.size(); }
 
+    void rewind()
+    {
+        m_buffer.resize_and_keep_capacity(m_last_instruction_start_offset);
+        m_terminated = false;
+    }
+
     void grow(size_t additional_size);
 
     void terminate(Badge<Generator>) { m_terminated = true; }
@@ -52,8 +58,11 @@ public:
     auto const& source_map() const { return m_source_map; }
     void add_source_map_entry(size_t bytecode_offset, SourceRecord const& source_record) { m_source_map.set(bytecode_offset, source_record); }
 
-    auto const& this_() const { return m_this; }
-    void set_this(ScopedOperand operand) { m_this = operand; }
+    [[nodiscard]] bool has_resolved_this() const { return m_has_resolved_this; }
+    void set_has_resolved_this() { m_has_resolved_this = true; }
+
+    [[nodiscard]] size_t last_instruction_start_offset() const { return m_last_instruction_start_offset; }
+    void set_last_instruction_start_offset(size_t offset) { m_last_instruction_start_offset = offset; }
 
 private:
     explicit BasicBlock(u32 index, String name);
@@ -64,10 +73,11 @@ private:
     BasicBlock const* m_finalizer { nullptr };
     String m_name;
     bool m_terminated { false };
+    bool m_has_resolved_this { false };
 
     HashMap<size_t, SourceRecord> m_source_map;
 
-    Optional<ScopedOperand> m_this;
+    size_t m_last_instruction_start_offset { 0 };
 };
 
 }

@@ -336,6 +336,11 @@ static int __dl_iterate_phdr(DlIteratePhdrCallbackFunction callback, void* data)
     return 0;
 }
 
+int DynamicLinker::iterate_over_loaded_shared_objects(int (*callback)(struct dl_phdr_info* info, size_t size, void* data), void* data)
+{
+    return __dl_iterate_phdr(callback, data);
+}
+
 static void initialize_libc(DynamicObject& libc)
 {
     auto res = libc.lookup_symbol("__libc_init"sv);
@@ -739,7 +744,12 @@ Examples of static-pie ELF objects are ELF packers, and the system dynamic loade
         entry_point = entry_point.offset(main_executable_loader->base_address().get());
     auto entry_point_function = reinterpret_cast<EntryPointFunction>(entry_point.as_ptr());
 
-    int rc = syscall(SC_prctl, PR_SET_NO_NEW_SYSCALL_REGION_ANNOTATIONS, 1, 0, nullptr);
+    int rc = syscall(SC_prctl, PR_SET_NO_NEW_SYSCALL_REGION_ANNOTATIONS, 0, 0, nullptr);
+    if (rc < 0) {
+        VERIFY_NOT_REACHED();
+    }
+
+    rc = syscall(SC_prctl, PR_SET_NO_TRANSITION_TO_EXECUTABLE_FROM_WRITABLE_PROT, 0, 0, nullptr);
     if (rc < 0) {
         VERIFY_NOT_REACHED();
     }

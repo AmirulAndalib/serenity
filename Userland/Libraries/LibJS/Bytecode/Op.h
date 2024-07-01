@@ -32,6 +32,56 @@ class FunctionExpression;
 
 namespace JS::Bytecode::Op {
 
+class CreateRestParams final : public Instruction {
+public:
+    CreateRestParams(Operand dst, u32 rest_index)
+        : Instruction(Type::CreateRestParams)
+        , m_dst(dst)
+        , m_rest_index(rest_index)
+    {
+    }
+
+    ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const;
+    ByteString to_byte_string_impl(Bytecode::Executable const&) const;
+    void visit_operands_impl(Function<void(Operand&)> visitor)
+    {
+        visitor(m_dst);
+    }
+
+private:
+    Operand m_dst;
+    u32 m_rest_index;
+};
+
+class CreateArguments final : public Instruction {
+public:
+    enum class Kind {
+        Mapped,
+        Unmapped,
+    };
+
+    CreateArguments(Optional<Operand> dst, Kind kind, bool is_immutable)
+        : Instruction(Type::CreateArguments)
+        , m_dst(dst)
+        , m_kind(kind)
+        , m_is_immutable(is_immutable)
+    {
+    }
+
+    ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const;
+    ByteString to_byte_string_impl(Bytecode::Executable const&) const;
+    void visit_operands_impl(Function<void(Operand&)> visitor)
+    {
+        if (m_dst.has_value())
+            visitor(m_dst.value());
+    }
+
+private:
+    Optional<Operand> m_dst;
+    Kind m_kind;
+    bool m_is_immutable { false };
+};
+
 class Mov final : public Instruction {
 public:
     Mov(Operand dst, Operand src)
@@ -41,8 +91,12 @@ public:
     {
     }
 
-    ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const;
     ByteString to_byte_string_impl(Bytecode::Executable const&) const;
+    void visit_operands_impl(Function<void(Operand&)> visitor)
+    {
+        visitor(m_dst);
+        visitor(m_src);
+    }
 
     Operand dst() const { return m_dst; }
     Operand src() const { return m_src; }
@@ -91,6 +145,12 @@ private:
                                                                             \
         ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const; \
         ByteString to_byte_string_impl(Bytecode::Executable const&) const;  \
+        void visit_operands_impl(Function<void(Operand&)> visitor)          \
+        {                                                                   \
+            visitor(m_dst);                                                 \
+            visitor(m_lhs);                                                 \
+            visitor(m_rhs);                                                 \
+        }                                                                   \
                                                                             \
         Operand dst() const { return m_dst; }                               \
         Operand lhs() const { return m_lhs; }                               \
@@ -125,6 +185,11 @@ JS_ENUMERATE_COMMON_BINARY_OPS_WITH_FAST_PATH(JS_DECLARE_COMMON_BINARY_OP)
                                                                             \
         ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const; \
         ByteString to_byte_string_impl(Bytecode::Executable const&) const;  \
+        void visit_operands_impl(Function<void(Operand&)> visitor)          \
+        {                                                                   \
+            visitor(m_dst);                                                 \
+            visitor(m_src);                                                 \
+        }                                                                   \
                                                                             \
         Operand dst() const { return m_dst; }                               \
         Operand src() const { return m_src; }                               \
@@ -145,8 +210,12 @@ public:
     {
     }
 
-    ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const;
+    void execute_impl(Bytecode::Interpreter&) const;
     ByteString to_byte_string_impl(Bytecode::Executable const&) const;
+    void visit_operands_impl(Function<void(Operand&)> visitor)
+    {
+        visitor(m_dst);
+    }
 
     Operand dst() const { return m_dst; }
 
@@ -165,8 +234,12 @@ public:
     {
     }
 
-    ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const;
+    void execute_impl(Bytecode::Interpreter&) const;
     ByteString to_byte_string_impl(Bytecode::Executable const&) const;
+    void visit_operands_impl(Function<void(Operand&)> visitor)
+    {
+        visitor(m_dst);
+    }
 
     Operand dst() const { return m_dst; }
     StringTableIndex source_index() const { return m_source_index; }
@@ -183,25 +256,29 @@ private:
 #define JS_ENUMERATE_NEW_BUILTIN_ERROR_OPS(O) \
     O(TypeError)
 
-#define JS_DECLARE_NEW_BUILTIN_ERROR_OP(ErrorName)                          \
-    class New##ErrorName final : public Instruction {                       \
-    public:                                                                 \
-        New##ErrorName(Operand dst, StringTableIndex error_string)          \
-            : Instruction(Type::New##ErrorName)                             \
-            , m_dst(dst)                                                    \
-            , m_error_string(error_string)                                  \
-        {                                                                   \
-        }                                                                   \
-                                                                            \
-        ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const; \
-        ByteString to_byte_string_impl(Bytecode::Executable const&) const;  \
-                                                                            \
-        Operand dst() const { return m_dst; }                               \
-        StringTableIndex error_string() const { return m_error_string; }    \
-                                                                            \
-    private:                                                                \
-        Operand m_dst;                                                      \
-        StringTableIndex m_error_string;                                    \
+#define JS_DECLARE_NEW_BUILTIN_ERROR_OP(ErrorName)                         \
+    class New##ErrorName final : public Instruction {                      \
+    public:                                                                \
+        New##ErrorName(Operand dst, StringTableIndex error_string)         \
+            : Instruction(Type::New##ErrorName)                            \
+            , m_dst(dst)                                                   \
+            , m_error_string(error_string)                                 \
+        {                                                                  \
+        }                                                                  \
+                                                                           \
+        void execute_impl(Bytecode::Interpreter&) const;                   \
+        ByteString to_byte_string_impl(Bytecode::Executable const&) const; \
+        void visit_operands_impl(Function<void(Operand&)> visitor)         \
+        {                                                                  \
+            visitor(m_dst);                                                \
+        }                                                                  \
+                                                                           \
+        Operand dst() const { return m_dst; }                              \
+        StringTableIndex error_string() const { return m_error_string; }   \
+                                                                           \
+    private:                                                               \
+        Operand m_dst;                                                     \
+        StringTableIndex m_error_string;                                   \
     };
 
 JS_ENUMERATE_NEW_BUILTIN_ERROR_OPS(JS_DECLARE_NEW_BUILTIN_ERROR_OP)
@@ -224,6 +301,13 @@ public:
 
     ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const;
     ByteString to_byte_string_impl(Bytecode::Executable const&) const;
+    void visit_operands_impl(Function<void(Operand&)> visitor)
+    {
+        visitor(m_dst);
+        visitor(m_from_object);
+        for (size_t i = 0; i < m_excluded_names_count; i++)
+            visitor(m_excluded_names[i]);
+    }
 
     size_t length_impl() const
     {
@@ -263,8 +347,14 @@ public:
             m_elements[i] = elements[i];
     }
 
-    ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const;
+    void execute_impl(Bytecode::Interpreter&) const;
     ByteString to_byte_string_impl(Bytecode::Executable const&) const;
+    void visit_operands_impl(Function<void(Operand&)> visitor)
+    {
+        visitor(m_dst);
+        for (size_t i = 0; i < m_element_count; i++)
+            visitor(m_elements[i]);
+    }
 
     Operand dst() const { return m_dst; }
 
@@ -299,8 +389,12 @@ public:
         return round_up_to_power_of_two(alignof(void*), sizeof(*this) + sizeof(Value) * m_element_count);
     }
 
-    ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const;
+    void execute_impl(Bytecode::Interpreter&) const;
     ByteString to_byte_string_impl(Bytecode::Executable const&) const;
+    void visit_operands_impl(Function<void(Operand&)> visitor)
+    {
+        visitor(m_dst);
+    }
 
     Operand dst() const { return m_dst; }
     ReadonlySpan<Value> elements() const { return { m_elements, m_element_count }; }
@@ -309,6 +403,21 @@ private:
     Operand m_dst;
     size_t m_element_count { 0 };
     Value m_elements[];
+};
+
+class AddPrivateName final : public Instruction {
+public:
+    explicit AddPrivateName(IdentifierTableIndex name)
+        : Instruction(Type::AddPrivateName)
+        , m_name(name)
+    {
+    }
+
+    void execute_impl(Bytecode::Interpreter&) const;
+    ByteString to_byte_string_impl(Bytecode::Executable const&) const;
+
+private:
+    IdentifierTableIndex m_name;
 };
 
 class ArrayAppend final : public Instruction {
@@ -323,6 +432,11 @@ public:
 
     ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const;
     ByteString to_byte_string_impl(Bytecode::Executable const&) const;
+    void visit_operands_impl(Function<void(Operand&)> visitor)
+    {
+        visitor(m_dst);
+        visitor(m_src);
+    }
 
     Operand dst() const { return m_dst; }
     Operand src() const { return m_src; }
@@ -346,6 +460,12 @@ public:
 
     ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const;
     ByteString to_byte_string_impl(Bytecode::Executable const&) const;
+    void visit_operands_impl(Function<void(Operand&)> visitor)
+    {
+        visitor(m_dst);
+        visitor(m_specifier);
+        visitor(m_options);
+    }
 
     Operand dst() const { return m_dst; }
     Operand specifier() const { return m_specifier; }
@@ -372,6 +492,12 @@ public:
     Operand dst() const { return m_dst; }
     Operand iterator() const { return m_iterator; }
 
+    void visit_operands_impl(Function<void(Operand&)> visitor)
+    {
+        visitor(m_dst);
+        visitor(m_iterator);
+    }
+
 private:
     Operand m_dst;
     Operand m_iterator;
@@ -392,6 +518,12 @@ public:
     Operand dst() const { return m_dst; }
     Operand src() const { return m_src; }
 
+    void visit_operands_impl(Function<void(Operand&)> visitor)
+    {
+        visitor(m_dst);
+        visitor(m_src);
+    }
+
 private:
     Operand m_dst;
     Operand m_src;
@@ -402,14 +534,49 @@ enum class EnvironmentMode {
     Var,
 };
 
+enum class BindingInitializationMode {
+    Initialize,
+    Set,
+};
+
 class CreateLexicalEnvironment final : public Instruction {
 public:
-    explicit CreateLexicalEnvironment()
+    explicit CreateLexicalEnvironment(u32 capacity = 0)
         : Instruction(Type::CreateLexicalEnvironment)
+        , m_capacity(capacity)
     {
     }
 
-    ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const;
+    void execute_impl(Bytecode::Interpreter&) const;
+    ByteString to_byte_string_impl(Bytecode::Executable const&) const;
+
+private:
+    u32 m_capacity { 0 };
+};
+
+class CreateVariableEnvironment final : public Instruction {
+public:
+    explicit CreateVariableEnvironment(u32 capacity = 0)
+        : Instruction(Type::CreateVariableEnvironment)
+        , m_capacity(capacity)
+    {
+    }
+
+    void execute_impl(Bytecode::Interpreter&) const;
+    ByteString to_byte_string_impl(Bytecode::Executable const&) const;
+
+private:
+    u32 m_capacity { 0 };
+};
+
+class CreatePrivateEnvironment final : public Instruction {
+public:
+    explicit CreatePrivateEnvironment()
+        : Instruction(Type::CreatePrivateEnvironment)
+    {
+    }
+
+    void execute_impl(Bytecode::Interpreter&) const;
     ByteString to_byte_string_impl(Bytecode::Executable const&) const;
 };
 
@@ -426,6 +593,11 @@ public:
 
     Operand object() const { return m_object; }
 
+    void visit_operands_impl(Function<void(Operand&)> visitor)
+    {
+        visitor(m_object);
+    }
+
 private:
     Operand m_object;
 };
@@ -438,10 +610,15 @@ public:
     {
     }
 
-    ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const;
+    void execute_impl(Bytecode::Interpreter&) const;
     ByteString to_byte_string_impl(Bytecode::Executable const&) const;
 
     Operand dst() const { return m_dst; }
+
+    void visit_operands_impl(Function<void(Operand&)> visitor)
+    {
+        visitor(m_dst);
+    }
 
 private:
     Operand m_dst;
@@ -454,7 +631,7 @@ public:
     {
     }
 
-    ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const;
+    void execute_impl(Bytecode::Interpreter&) const;
     ByteString to_byte_string_impl(Bytecode::Executable const&) const;
 };
 
@@ -465,7 +642,7 @@ public:
     {
     }
 
-    ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const;
+    void execute_impl(Bytecode::Interpreter&) const;
     ByteString to_byte_string_impl(Bytecode::Executable const&) const;
 };
 
@@ -498,53 +675,122 @@ private:
     bool m_is_strict { false };
 };
 
-class SetVariable final : public Instruction {
+class InitializeLexicalBinding final : public Instruction {
 public:
-    enum class InitializationMode {
-        Initialize,
-        Set,
-    };
-    explicit SetVariable(IdentifierTableIndex identifier, Operand src, u32 cache_index, InitializationMode initialization_mode = InitializationMode::Set, EnvironmentMode mode = EnvironmentMode::Lexical)
-        : Instruction(Type::SetVariable)
+    explicit InitializeLexicalBinding(IdentifierTableIndex identifier, Operand src)
+        : Instruction(Type::InitializeLexicalBinding)
         , m_identifier(identifier)
         , m_src(src)
-        , m_mode(mode)
-        , m_initialization_mode(initialization_mode)
-        , m_cache_index(cache_index)
     {
     }
 
     ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const;
     ByteString to_byte_string_impl(Bytecode::Executable const&) const;
+    void visit_operands_impl(Function<void(Operand&)> visitor)
+    {
+        visitor(m_src);
+    }
 
     IdentifierTableIndex identifier() const { return m_identifier; }
     Operand src() const { return m_src; }
-    EnvironmentMode mode() const { return m_mode; }
-    InitializationMode initialization_mode() const { return m_initialization_mode; }
-    u32 cache_index() const { return m_cache_index; }
 
 private:
     IdentifierTableIndex m_identifier;
     Operand m_src;
-    EnvironmentMode m_mode;
-    InitializationMode m_initialization_mode { InitializationMode::Set };
-    u32 m_cache_index { 0 };
+    mutable EnvironmentCoordinate m_cache;
 };
 
-class SetLocal final : public Instruction {
+class InitializeVariableBinding final : public Instruction {
 public:
-    SetLocal(size_t index, Operand src)
-        : Instruction(Type::SetLocal)
+    explicit InitializeVariableBinding(IdentifierTableIndex identifier, Operand src)
+        : Instruction(Type::InitializeVariableBinding)
+        , m_identifier(identifier)
+        , m_src(src)
+    {
+    }
+
+    ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const;
+    ByteString to_byte_string_impl(Bytecode::Executable const&) const;
+    void visit_operands_impl(Function<void(Operand&)> visitor)
+    {
+        visitor(m_src);
+    }
+
+    IdentifierTableIndex identifier() const { return m_identifier; }
+    Operand src() const { return m_src; }
+
+private:
+    IdentifierTableIndex m_identifier;
+    Operand m_src;
+    mutable EnvironmentCoordinate m_cache;
+};
+
+class SetLexicalBinding final : public Instruction {
+public:
+    explicit SetLexicalBinding(IdentifierTableIndex identifier, Operand src)
+        : Instruction(Type::SetLexicalBinding)
+        , m_identifier(identifier)
+        , m_src(src)
+    {
+    }
+
+    ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const;
+    ByteString to_byte_string_impl(Bytecode::Executable const&) const;
+    void visit_operands_impl(Function<void(Operand&)> visitor)
+    {
+        visitor(m_src);
+    }
+
+    IdentifierTableIndex identifier() const { return m_identifier; }
+    Operand src() const { return m_src; }
+
+private:
+    IdentifierTableIndex m_identifier;
+    Operand m_src;
+    mutable EnvironmentCoordinate m_cache;
+};
+
+class SetVariableBinding final : public Instruction {
+public:
+    explicit SetVariableBinding(IdentifierTableIndex identifier, Operand src)
+        : Instruction(Type::SetVariableBinding)
+        , m_identifier(identifier)
+        , m_src(src)
+    {
+    }
+
+    ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const;
+    ByteString to_byte_string_impl(Bytecode::Executable const&) const;
+    void visit_operands_impl(Function<void(Operand&)> visitor)
+    {
+        visitor(m_src);
+    }
+
+    IdentifierTableIndex identifier() const { return m_identifier; }
+    Operand src() const { return m_src; }
+
+private:
+    IdentifierTableIndex m_identifier;
+    Operand m_src;
+    mutable EnvironmentCoordinate m_cache;
+};
+
+class SetArgument final : public Instruction {
+public:
+    SetArgument(size_t index, Operand src)
+        : Instruction(Type::SetArgument)
         , m_index(index)
         , m_src(src)
     {
     }
 
-    ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const;
     ByteString to_byte_string_impl(Bytecode::Executable const&) const;
+    void visit_operands_impl(Function<void(Operand&)> visitor)
+    {
+        visitor(m_src);
+    }
 
-    u32 index() const { return m_index; }
-    Operand dst() const { return Operand(Operand::Type::Local, m_index); }
+    size_t index() const { return m_index; }
     Operand src() const { return m_src; }
 
 private:
@@ -552,22 +798,48 @@ private:
     Operand m_src;
 };
 
+class GetArgument final : public Instruction {
+public:
+    GetArgument(Operand dst, size_t index)
+        : Instruction(Type::GetArgument)
+        , m_index(index)
+        , m_dst(dst)
+    {
+    }
+
+    ByteString to_byte_string_impl(Bytecode::Executable const&) const;
+    void visit_operands_impl(Function<void(Operand&)> visitor)
+    {
+        visitor(m_dst);
+    }
+
+    u32 index() const { return m_index; }
+    Operand dst() const { return m_dst; }
+
+private:
+    u32 m_index;
+    Operand m_dst;
+};
+
 class GetCalleeAndThisFromEnvironment final : public Instruction {
 public:
-    explicit GetCalleeAndThisFromEnvironment(Operand callee, Operand this_value, IdentifierTableIndex identifier, u32 cache_index)
+    explicit GetCalleeAndThisFromEnvironment(Operand callee, Operand this_value, IdentifierTableIndex identifier)
         : Instruction(Type::GetCalleeAndThisFromEnvironment)
         , m_identifier(identifier)
         , m_callee(callee)
         , m_this_value(this_value)
-        , m_cache_index(cache_index)
     {
     }
 
     ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const;
     ByteString to_byte_string_impl(Bytecode::Executable const&) const;
+    void visit_operands_impl(Function<void(Operand&)> visitor)
+    {
+        visitor(m_callee);
+        visitor(m_this_value);
+    }
 
     IdentifierTableIndex identifier() const { return m_identifier; }
-    u32 cache_index() const { return m_cache_index; }
     Operand callee() const { return m_callee; }
     Operand this_() const { return m_this_value; }
 
@@ -575,16 +847,15 @@ private:
     IdentifierTableIndex m_identifier;
     Operand m_callee;
     Operand m_this_value;
-    u32 m_cache_index { 0 };
+    mutable EnvironmentCoordinate m_cache;
 };
 
-class GetVariable final : public Instruction {
+class GetBinding final : public Instruction {
 public:
-    explicit GetVariable(Operand dst, IdentifierTableIndex identifier, u32 cache_index)
-        : Instruction(Type::GetVariable)
+    explicit GetBinding(Operand dst, IdentifierTableIndex identifier)
+        : Instruction(Type::GetBinding)
         , m_dst(dst)
         , m_identifier(identifier)
-        , m_cache_index(cache_index)
     {
     }
 
@@ -593,12 +864,16 @@ public:
 
     Operand dst() const { return m_dst; }
     IdentifierTableIndex identifier() const { return m_identifier; }
-    u32 cache_index() const { return m_cache_index; }
+
+    void visit_operands_impl(Function<void(Operand&)> visitor)
+    {
+        visitor(m_dst);
+    }
 
 private:
     Operand m_dst;
     IdentifierTableIndex m_identifier;
-    u32 m_cache_index { 0 };
+    mutable EnvironmentCoordinate m_cache;
 };
 
 class GetGlobal final : public Instruction {
@@ -617,6 +892,11 @@ public:
     Operand dst() const { return m_dst; }
     IdentifierTableIndex identifier() const { return m_identifier; }
     u32 cache_index() const { return m_cache_index; }
+
+    void visit_operands_impl(Function<void(Operand&)> visitor)
+    {
+        visitor(m_dst);
+    }
 
 private:
     Operand m_dst;
@@ -639,6 +919,11 @@ public:
     Operand dst() const { return m_dst; }
     IdentifierTableIndex identifier() const { return m_identifier; }
 
+    void visit_operands_impl(Function<void(Operand&)> visitor)
+    {
+        visitor(m_dst);
+    }
+
 private:
     Operand m_dst;
     IdentifierTableIndex m_identifier;
@@ -658,6 +943,11 @@ public:
 
     ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const;
     ByteString to_byte_string_impl(Bytecode::Executable const&) const;
+    void visit_operands_impl(Function<void(Operand&)> visitor)
+    {
+        visitor(m_dst);
+        visitor(m_base);
+    }
 
     Operand dst() const { return m_dst; }
     Operand base() const { return m_base; }
@@ -686,6 +976,12 @@ public:
 
     ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const;
     ByteString to_byte_string_impl(Bytecode::Executable const&) const;
+    void visit_operands_impl(Function<void(Operand&)> visitor)
+    {
+        visitor(m_dst);
+        visitor(m_base);
+        visitor(m_this_value);
+    }
 
     Operand dst() const { return m_dst; }
     Operand base() const { return m_base; }
@@ -697,6 +993,68 @@ private:
     Operand m_dst;
     Operand m_base;
     IdentifierTableIndex m_property;
+    Operand m_this_value;
+    u32 m_cache_index { 0 };
+};
+
+class GetLength final : public Instruction {
+public:
+    GetLength(Operand dst, Operand base, Optional<IdentifierTableIndex> base_identifier, u32 cache_index)
+        : Instruction(Type::GetLength)
+        , m_dst(dst)
+        , m_base(base)
+        , m_base_identifier(move(base_identifier))
+        , m_cache_index(cache_index)
+    {
+    }
+
+    ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const;
+    ByteString to_byte_string_impl(Bytecode::Executable const&) const;
+    void visit_operands_impl(Function<void(Operand&)> visitor)
+    {
+        visitor(m_dst);
+        visitor(m_base);
+    }
+
+    Operand dst() const { return m_dst; }
+    Operand base() const { return m_base; }
+    u32 cache_index() const { return m_cache_index; }
+
+private:
+    Operand m_dst;
+    Operand m_base;
+    Optional<IdentifierTableIndex> m_base_identifier;
+    u32 m_cache_index { 0 };
+};
+
+class GetLengthWithThis final : public Instruction {
+public:
+    GetLengthWithThis(Operand dst, Operand base, Operand this_value, u32 cache_index)
+        : Instruction(Type::GetLengthWithThis)
+        , m_dst(dst)
+        , m_base(base)
+        , m_this_value(this_value)
+        , m_cache_index(cache_index)
+    {
+    }
+
+    ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const;
+    ByteString to_byte_string_impl(Bytecode::Executable const&) const;
+    void visit_operands_impl(Function<void(Operand&)> visitor)
+    {
+        visitor(m_dst);
+        visitor(m_base);
+        visitor(m_this_value);
+    }
+
+    Operand dst() const { return m_dst; }
+    Operand base() const { return m_base; }
+    Operand this_value() const { return m_this_value; }
+    u32 cache_index() const { return m_cache_index; }
+
+private:
+    Operand m_dst;
+    Operand m_base;
     Operand m_this_value;
     u32 m_cache_index { 0 };
 };
@@ -713,6 +1071,11 @@ public:
 
     ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const;
     ByteString to_byte_string_impl(Bytecode::Executable const&) const;
+    void visit_operands_impl(Function<void(Operand&)> visitor)
+    {
+        visitor(m_dst);
+        visitor(m_base);
+    }
 
     Operand dst() const { return m_dst; }
     Operand base() const { return m_base; }
@@ -736,6 +1099,11 @@ public:
 
     ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const;
     ByteString to_byte_string_impl(Bytecode::Executable const&) const;
+    void visit_operands_impl(Function<void(Operand&)> visitor)
+    {
+        visitor(m_dst);
+        visitor(m_base);
+    }
 
     Operand dst() const { return m_dst; }
     Operand base() const { return m_base; }
@@ -771,6 +1139,11 @@ public:
 
     ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const;
     ByteString to_byte_string_impl(Bytecode::Executable const&) const;
+    void visit_operands_impl(Function<void(Operand&)> visitor)
+    {
+        visitor(m_base);
+        visitor(m_src);
+    }
 
     Operand base() const { return m_base; }
     IdentifierTableIndex property() const { return m_property; }
@@ -802,6 +1175,12 @@ public:
 
     ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const;
     ByteString to_byte_string_impl(Bytecode::Executable const&) const;
+    void visit_operands_impl(Function<void(Operand&)> visitor)
+    {
+        visitor(m_base);
+        visitor(m_this_value);
+        visitor(m_src);
+    }
 
     Operand base() const { return m_base; }
     Operand this_value() const { return m_this_value; }
@@ -832,6 +1211,11 @@ public:
 
     ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const;
     ByteString to_byte_string_impl(Bytecode::Executable const&) const;
+    void visit_operands_impl(Function<void(Operand&)> visitor)
+    {
+        visitor(m_base);
+        visitor(m_src);
+    }
 
     Operand base() const { return m_base; }
     IdentifierTableIndex property() const { return m_property; }
@@ -856,6 +1240,11 @@ public:
 
     ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const;
     ByteString to_byte_string_impl(Bytecode::Executable const&) const;
+    void visit_operands_impl(Function<void(Operand&)> visitor)
+    {
+        visitor(m_dst);
+        visitor(m_base);
+    }
 
     Operand dst() const { return m_dst; }
     Operand base() const { return m_base; }
@@ -880,6 +1269,12 @@ public:
 
     ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const;
     ByteString to_byte_string_impl(Bytecode::Executable const&) const;
+    void visit_operands_impl(Function<void(Operand&)> visitor)
+    {
+        visitor(m_dst);
+        visitor(m_base);
+        visitor(m_this_value);
+    }
 
     Operand dst() const { return m_dst; }
     Operand base() const { return m_base; }
@@ -906,6 +1301,12 @@ public:
 
     ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const;
     ByteString to_byte_string_impl(Bytecode::Executable const&) const;
+    void visit_operands_impl(Function<void(Operand&)> visitor)
+    {
+        visitor(m_dst);
+        visitor(m_base);
+        visitor(m_property);
+    }
 
     Operand dst() const { return m_dst; }
     Operand base() const { return m_base; }
@@ -933,6 +1334,13 @@ public:
 
     ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const;
     ByteString to_byte_string_impl(Bytecode::Executable const&) const;
+    void visit_operands_impl(Function<void(Operand&)> visitor)
+    {
+        visitor(m_dst);
+        visitor(m_base);
+        visitor(m_property);
+        visitor(m_this_value);
+    }
 
     Operand dst() const { return m_dst; }
     Operand base() const { return m_base; }
@@ -960,6 +1368,12 @@ public:
 
     ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const;
     ByteString to_byte_string_impl(Bytecode::Executable const&) const;
+    void visit_operands_impl(Function<void(Operand&)> visitor)
+    {
+        visitor(m_base);
+        visitor(m_property);
+        visitor(m_src);
+    }
 
     Operand base() const { return m_base; }
     Operand property() const { return m_property; }
@@ -988,6 +1402,13 @@ public:
 
     ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const;
     ByteString to_byte_string_impl(Bytecode::Executable const&) const;
+    void visit_operands_impl(Function<void(Operand&)> visitor)
+    {
+        visitor(m_base);
+        visitor(m_property);
+        visitor(m_this_value);
+        visitor(m_src);
+    }
 
     Operand base() const { return m_base; }
     Operand property() const { return m_property; }
@@ -1015,6 +1436,12 @@ public:
 
     ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const;
     ByteString to_byte_string_impl(Bytecode::Executable const&) const;
+    void visit_operands_impl(Function<void(Operand&)> visitor)
+    {
+        visitor(m_dst);
+        visitor(m_base);
+        visitor(m_property);
+    }
 
     Operand dst() const { return m_dst; }
     Operand base() const { return m_base; }
@@ -1044,6 +1471,13 @@ public:
 
     ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const;
     ByteString to_byte_string_impl(Bytecode::Executable const&) const;
+    void visit_operands_impl(Function<void(Operand&)> visitor)
+    {
+        visitor(m_dst);
+        visitor(m_base);
+        visitor(m_this_value);
+        visitor(m_property);
+    }
 
 private:
     Operand m_dst;
@@ -1062,7 +1496,6 @@ public:
     {
     }
 
-    ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const;
     ByteString to_byte_string_impl(Bytecode::Executable const&) const;
     void visit_labels_impl(Function<void(Label&)> visitor)
     {
@@ -1087,12 +1520,15 @@ public:
     {
     }
 
-    ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const;
     ByteString to_byte_string_impl(Bytecode::Executable const&) const;
     void visit_labels_impl(Function<void(Label&)> visitor)
     {
         visitor(m_true_target);
         visitor(m_false_target);
+    }
+    void visit_operands_impl(Function<void(Operand&)> visitor)
+    {
+        visitor(m_condition);
     }
 
     Operand condition() const { return m_condition; }
@@ -1116,11 +1552,14 @@ public:
     {
     }
 
-    ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const;
     ByteString to_byte_string_impl(Bytecode::Executable const&) const;
     void visit_labels_impl(Function<void(Label&)> visitor)
     {
         visitor(m_target);
+    }
+    void visit_operands_impl(Function<void(Operand&)> visitor)
+    {
+        visitor(m_condition);
     }
 
     Operand condition() const { return m_condition; }
@@ -1142,11 +1581,14 @@ public:
     {
     }
 
-    ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const;
     ByteString to_byte_string_impl(Bytecode::Executable const&) const;
     void visit_labels_impl(Function<void(Label&)> visitor)
     {
         visitor(m_target);
+    }
+    void visit_operands_impl(Function<void(Operand&)> visitor)
+    {
+        visitor(m_condition);
     }
 
     Operand condition() const { return m_condition; }
@@ -1156,6 +1598,57 @@ private:
     Operand m_condition;
     Label m_target;
 };
+
+#define JS_ENUMERATE_COMPARISON_OPS(X)            \
+    X(LessThan, less_than, <)                     \
+    X(LessThanEquals, less_than_equals, <=)       \
+    X(GreaterThan, greater_than, >)               \
+    X(GreaterThanEquals, greater_than_equals, >=) \
+    X(LooselyEquals, loosely_equals, ==)          \
+    X(LooselyInequals, loosely_inequals, !=)      \
+    X(StrictlyEquals, strict_equals, ==)          \
+    X(StrictlyInequals, strict_inequals, !=)
+
+#define DECLARE_COMPARISON_OP(op_TitleCase, op_snake_case, numeric_operator)                         \
+    class Jump##op_TitleCase final : public Instruction {                                            \
+    public:                                                                                          \
+        constexpr static bool IsTerminator = true;                                                   \
+                                                                                                     \
+        explicit Jump##op_TitleCase(Operand lhs, Operand rhs, Label true_target, Label false_target) \
+            : Instruction(Type::Jump##op_TitleCase)                                                  \
+            , m_lhs(lhs)                                                                             \
+            , m_rhs(rhs)                                                                             \
+            , m_true_target(true_target)                                                             \
+            , m_false_target(false_target)                                                           \
+        {                                                                                            \
+        }                                                                                            \
+                                                                                                     \
+        ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const;                          \
+        ByteString to_byte_string_impl(Bytecode::Executable const&) const;                           \
+        void visit_labels_impl(Function<void(Label&)> visitor)                                       \
+        {                                                                                            \
+            visitor(m_true_target);                                                                  \
+            visitor(m_false_target);                                                                 \
+        }                                                                                            \
+        void visit_operands_impl(Function<void(Operand&)> visitor)                                   \
+        {                                                                                            \
+            visitor(m_lhs);                                                                          \
+            visitor(m_rhs);                                                                          \
+        }                                                                                            \
+                                                                                                     \
+        Operand lhs() const { return m_lhs; }                                                        \
+        Operand rhs() const { return m_rhs; }                                                        \
+        auto& true_target() const { return m_true_target; }                                          \
+        auto& false_target() const { return m_false_target; }                                        \
+                                                                                                     \
+    private:                                                                                         \
+        Operand m_lhs;                                                                               \
+        Operand m_rhs;                                                                               \
+        Label m_true_target;                                                                         \
+        Label m_false_target;                                                                        \
+    };
+
+JS_ENUMERATE_COMPARISON_OPS(DECLARE_COMPARISON_OP)
 
 class JumpNullish final : public Instruction {
 public:
@@ -1169,12 +1662,15 @@ public:
     {
     }
 
-    ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const;
     ByteString to_byte_string_impl(Bytecode::Executable const&) const;
     void visit_labels_impl(Function<void(Label&)> visitor)
     {
         visitor(m_true_target);
         visitor(m_false_target);
+    }
+    void visit_operands_impl(Function<void(Operand&)> visitor)
+    {
+        visitor(m_condition);
     }
 
     Operand condition() const { return m_condition; }
@@ -1199,12 +1695,15 @@ public:
     {
     }
 
-    ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const;
     ByteString to_byte_string_impl(Bytecode::Executable const&) const;
     void visit_labels_impl(Function<void(Label&)> visitor)
     {
         visitor(m_true_target);
         visitor(m_false_target);
+    }
+    void visit_operands_impl(Function<void(Operand&)> visitor)
+    {
+        visitor(m_condition);
     }
 
     Operand condition() const { return m_condition; }
@@ -1217,7 +1716,7 @@ private:
     Label m_false_target;
 };
 
-enum class CallType {
+enum class CallType : u8 {
     Call,
     Construct,
     DirectEval,
@@ -1234,8 +1733,8 @@ public:
         , m_this_value(this_value)
         , m_argument_count(arguments.size())
         , m_type(type)
-        , m_expression_string(expression_string)
         , m_builtin(builtin)
+        , m_expression_string(expression_string)
     {
         for (size_t i = 0; i < arguments.size(); ++i)
             m_arguments[i] = arguments[i];
@@ -1258,6 +1757,14 @@ public:
 
     ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const;
     ByteString to_byte_string_impl(Bytecode::Executable const&) const;
+    void visit_operands_impl(Function<void(Operand&)> visitor)
+    {
+        visitor(m_dst);
+        visitor(m_callee);
+        visitor(m_this_value);
+        for (size_t i = 0; i < m_argument_count; i++)
+            visitor(m_arguments[i]);
+    }
 
 private:
     Operand m_dst;
@@ -1265,8 +1772,8 @@ private:
     Operand m_this_value;
     u32 m_argument_count { 0 };
     CallType m_type;
-    Optional<StringTableIndex> m_expression_string;
     Optional<Builtin> m_builtin;
+    Optional<StringTableIndex> m_expression_string;
     Operand m_arguments[];
 };
 
@@ -1292,6 +1799,13 @@ public:
 
     ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const;
     ByteString to_byte_string_impl(Bytecode::Executable const&) const;
+    void visit_operands_impl(Function<void(Operand&)> visitor)
+    {
+        visitor(m_dst);
+        visitor(m_callee);
+        visitor(m_this_value);
+        visitor(m_arguments);
+    }
 
 private:
     Operand m_dst;
@@ -1314,6 +1828,11 @@ public:
 
     ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const;
     ByteString to_byte_string_impl(Bytecode::Executable const&) const;
+    void visit_operands_impl(Function<void(Operand&)> visitor)
+    {
+        visitor(m_dst);
+        visitor(m_arguments);
+    }
 
     Operand dst() const { return m_dst; }
     Operand arguments() const { return m_arguments; }
@@ -1327,17 +1846,39 @@ private:
 
 class NewClass final : public Instruction {
 public:
-    explicit NewClass(Operand dst, Optional<Operand> super_class, ClassExpression const& class_expression, Optional<IdentifierTableIndex> lhs_name)
+    static constexpr bool IsVariableLength = true;
+
+    explicit NewClass(Operand dst, Optional<Operand> super_class, ClassExpression const& class_expression, Optional<IdentifierTableIndex> lhs_name, ReadonlySpan<Optional<ScopedOperand>> elements_keys)
         : Instruction(Type::NewClass)
         , m_dst(dst)
         , m_super_class(super_class)
         , m_class_expression(class_expression)
         , m_lhs_name(lhs_name)
+        , m_element_keys_count(elements_keys.size())
     {
+        for (size_t i = 0; i < m_element_keys_count; i++) {
+            if (elements_keys[i].has_value())
+                m_element_keys[i] = elements_keys[i]->operand();
+        }
+    }
+
+    size_t length_impl() const
+    {
+        return round_up_to_power_of_two(alignof(void*), sizeof(*this) + sizeof(Optional<Operand>) * m_element_keys_count);
     }
 
     ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const;
     ByteString to_byte_string_impl(Bytecode::Executable const&) const;
+    void visit_operands_impl(Function<void(Operand&)> visitor)
+    {
+        visitor(m_dst);
+        if (m_super_class.has_value())
+            visitor(m_super_class.value());
+        for (size_t i = 0; i < m_element_keys_count; i++) {
+            if (m_element_keys[i].has_value())
+                visitor(m_element_keys[i].value());
+        }
+    }
 
     Operand dst() const { return m_dst; }
     Optional<Operand> const& super_class() const { return m_super_class; }
@@ -1349,11 +1890,13 @@ private:
     Optional<Operand> m_super_class;
     ClassExpression const& m_class_expression;
     Optional<IdentifierTableIndex> m_lhs_name;
+    size_t m_element_keys_count { 0 };
+    Optional<Operand> m_element_keys[];
 };
 
 class NewFunction final : public Instruction {
 public:
-    explicit NewFunction(Operand dst, FunctionExpression const& function_node, Optional<IdentifierTableIndex> lhs_name, Optional<Operand> home_object = {})
+    explicit NewFunction(Operand dst, FunctionNode const& function_node, Optional<IdentifierTableIndex> lhs_name, Optional<Operand> home_object = {})
         : Instruction(Type::NewFunction)
         , m_dst(dst)
         , m_function_node(function_node)
@@ -1362,17 +1905,23 @@ public:
     {
     }
 
-    ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const;
+    void execute_impl(Bytecode::Interpreter&) const;
     ByteString to_byte_string_impl(Bytecode::Executable const&) const;
+    void visit_operands_impl(Function<void(Operand&)> visitor)
+    {
+        visitor(m_dst);
+        if (m_home_object.has_value())
+            visitor(m_home_object.value());
+    }
 
     Operand dst() const { return m_dst; }
-    FunctionExpression const& function_node() const { return m_function_node; }
+    FunctionNode const& function_node() const { return m_function_node; }
     Optional<IdentifierTableIndex> const& lhs_name() const { return m_lhs_name; }
     Optional<Operand> const& home_object() const { return m_home_object; }
 
 private:
     Operand m_dst;
-    FunctionExpression const& m_function_node;
+    FunctionNode const& m_function_node;
     Optional<IdentifierTableIndex> m_lhs_name;
     Optional<Operand> m_home_object;
 };
@@ -1385,7 +1934,7 @@ public:
     {
     }
 
-    ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const;
+    void execute_impl(Bytecode::Interpreter&) const;
     ByteString to_byte_string_impl(Bytecode::Executable const&) const;
 
     ScopeNode const& scope_node() const { return m_scope_node; }
@@ -1404,8 +1953,13 @@ public:
     {
     }
 
-    ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const;
+    void execute_impl(Bytecode::Interpreter&) const;
     ByteString to_byte_string_impl(Bytecode::Executable const&) const;
+    void visit_operands_impl(Function<void(Operand&)> visitor)
+    {
+        if (m_value.has_value())
+            visitor(m_value.value());
+    }
 
     Optional<Operand> const& value() const { return m_value; }
 
@@ -1423,6 +1977,10 @@ public:
 
     ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const;
     ByteString to_byte_string_impl(Bytecode::Executable const&) const;
+    void visit_operands_impl(Function<void(Operand&)> visitor)
+    {
+        visitor(m_dst);
+    }
 
     Operand dst() const { return m_dst; }
 
@@ -1441,6 +1999,11 @@ public:
 
     ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const;
     ByteString to_byte_string_impl(Bytecode::Executable const&) const;
+    void visit_operands_impl(Function<void(Operand&)> visitor)
+    {
+        visitor(m_dst);
+        visitor(m_src);
+    }
 
     Operand dst() const { return m_dst; }
     Operand src() const { return m_src; }
@@ -1460,6 +2023,10 @@ public:
 
     ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const;
     ByteString to_byte_string_impl(Bytecode::Executable const&) const;
+    void visit_operands_impl(Function<void(Operand&)> visitor)
+    {
+        visitor(m_dst);
+    }
 
     Operand dst() const { return m_dst; }
 
@@ -1478,6 +2045,11 @@ public:
 
     ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const;
     ByteString to_byte_string_impl(Bytecode::Executable const&) const;
+    void visit_operands_impl(Function<void(Operand&)> visitor)
+    {
+        visitor(m_dst);
+        visitor(m_src);
+    }
 
     Operand dst() const { return m_dst; }
     Operand src() const { return m_src; }
@@ -1499,6 +2071,10 @@ public:
 
     ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const;
     ByteString to_byte_string_impl(Bytecode::Executable const&) const;
+    void visit_operands_impl(Function<void(Operand&)> visitor)
+    {
+        visitor(m_src);
+    }
 
     Operand src() const { return m_src; }
 
@@ -1516,6 +2092,10 @@ public:
 
     ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const;
     ByteString to_byte_string_impl(Bytecode::Executable const&) const;
+    void visit_operands_impl(Function<void(Operand&)> visitor)
+    {
+        visitor(m_src);
+    }
 
     Operand src() const { return m_src; }
 
@@ -1533,6 +2113,10 @@ public:
 
     ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const;
     ByteString to_byte_string_impl(Bytecode::Executable const&) const;
+    void visit_operands_impl(Function<void(Operand&)> visitor)
+    {
+        visitor(m_src);
+    }
 
     Operand src() const { return m_src; }
 
@@ -1550,6 +2134,10 @@ public:
 
     ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const;
     ByteString to_byte_string_impl(Bytecode::Executable const&) const;
+    void visit_operands_impl(Function<void(Operand&)> visitor)
+    {
+        visitor(m_src);
+    }
 
     Operand src() const { return m_src; }
 
@@ -1567,7 +2155,6 @@ public:
     {
     }
 
-    ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const;
     ByteString to_byte_string_impl(Bytecode::Executable const&) const;
     void visit_labels_impl(Function<void(Label&)> visitor)
     {
@@ -1594,7 +2181,6 @@ public:
 
     Label target() const { return m_target; }
 
-    ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const;
     ByteString to_byte_string_impl(Bytecode::Executable const&) const;
     void visit_labels_impl(Function<void(Label&)> visitor)
     {
@@ -1612,7 +2198,18 @@ public:
     {
     }
 
-    ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const;
+    void execute_impl(Bytecode::Interpreter&) const;
+    ByteString to_byte_string_impl(Bytecode::Executable const&) const;
+};
+
+class LeavePrivateEnvironment final : public Instruction {
+public:
+    LeavePrivateEnvironment()
+        : Instruction(Type::LeavePrivateEnvironment)
+    {
+    }
+
+    void execute_impl(Bytecode::Interpreter&) const;
     ByteString to_byte_string_impl(Bytecode::Executable const&) const;
 };
 
@@ -1623,7 +2220,7 @@ public:
     {
     }
 
-    ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const;
+    void execute_impl(Bytecode::Interpreter&) const;
     ByteString to_byte_string_impl(Bytecode::Executable const&) const;
 };
 
@@ -1637,7 +2234,6 @@ public:
     {
     }
 
-    ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const;
     ByteString to_byte_string_impl(Bytecode::Executable const&) const;
     void visit_labels_impl(Function<void(Label&)> visitor)
     {
@@ -1667,12 +2263,16 @@ public:
     {
     }
 
-    ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const;
+    void execute_impl(Bytecode::Interpreter&) const;
     ByteString to_byte_string_impl(Bytecode::Executable const&) const;
     void visit_labels_impl(Function<void(Label&)> visitor)
     {
         if (m_continuation_label.has_value())
             visitor(m_continuation_label.value());
+    }
+    void visit_operands_impl(Function<void(Operand&)> visitor)
+    {
+        visitor(m_value);
     }
 
     auto& continuation() const { return m_continuation_label; }
@@ -1680,6 +2280,31 @@ public:
 
 private:
     Optional<Label> m_continuation_label;
+    Operand m_value;
+};
+
+class PrepareYield final : public Instruction {
+public:
+    explicit PrepareYield(Operand dest, Operand value)
+        : Instruction(Type::PrepareYield)
+        , m_dest(dest)
+        , m_value(value)
+    {
+    }
+
+    void execute_impl(Bytecode::Interpreter&) const;
+    ByteString to_byte_string_impl(Bytecode::Executable const&) const;
+    void visit_operands_impl(Function<void(Operand&)> visitor)
+    {
+        visitor(m_dest);
+        visitor(m_value);
+    }
+
+    Operand destination() const { return m_dest; }
+    Operand value() const { return m_value; }
+
+private:
+    Operand m_dest;
     Operand m_value;
 };
 
@@ -1694,11 +2319,15 @@ public:
     {
     }
 
-    ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const;
+    void execute_impl(Bytecode::Interpreter&) const;
     ByteString to_byte_string_impl(Bytecode::Executable const&) const;
     void visit_labels_impl(Function<void(Label&)> visitor)
     {
         visitor(m_continuation_label);
+    }
+    void visit_operands_impl(Function<void(Operand&)> visitor)
+    {
+        visitor(m_argument);
     }
 
     auto& continuation() const { return m_continuation_label; }
@@ -1721,6 +2350,11 @@ public:
 
     ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const;
     ByteString to_byte_string_impl(Bytecode::Executable const&) const;
+    void visit_operands_impl(Function<void(Operand&)> visitor)
+    {
+        visitor(m_dst);
+        visitor(m_iterable);
+    }
 
     Operand dst() const { return m_dst; }
     Operand iterable() const { return m_iterable; }
@@ -1743,6 +2377,11 @@ public:
 
     ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const;
     ByteString to_byte_string_impl(Bytecode::Executable const&) const;
+    void visit_operands_impl(Function<void(Operand&)> visitor)
+    {
+        visitor(m_object);
+        visitor(m_iterator_record);
+    }
 
     Operand object() const { return m_object; }
     Operand iterator_record() const { return m_iterator_record; }
@@ -1763,6 +2402,11 @@ public:
 
     ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const;
     ByteString to_byte_string_impl(Bytecode::Executable const&) const;
+    void visit_operands_impl(Function<void(Operand&)> visitor)
+    {
+        visitor(m_next_method);
+        visitor(m_iterator_record);
+    }
 
     Operand next_method() const { return m_next_method; }
     Operand iterator_record() const { return m_iterator_record; }
@@ -1784,6 +2428,11 @@ public:
 
     ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const;
     ByteString to_byte_string_impl(Bytecode::Executable const&) const;
+    void visit_operands_impl(Function<void(Operand&)> visitor)
+    {
+        visitor(m_dst);
+        visitor(m_object);
+    }
 
     Operand dst() const { return m_dst; }
     Operand object() const { return m_object; }
@@ -1806,6 +2455,11 @@ public:
 
     ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const;
     ByteString to_byte_string_impl(Bytecode::Executable const&) const;
+    void visit_operands_impl(Function<void(Operand&)> visitor)
+    {
+        visitor(m_dst);
+        visitor(m_object);
+    }
 
     Operand dst() const { return m_dst; }
     Operand object() const { return m_object; }
@@ -1827,6 +2481,10 @@ public:
 
     ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const;
     ByteString to_byte_string_impl(Bytecode::Executable const&) const;
+    void visit_operands_impl(Function<void(Operand&)> visitor)
+    {
+        visitor(m_iterator_record);
+    }
 
     Operand iterator_record() const { return m_iterator_record; }
     Completion::Type completion_type() const { return m_completion_type; }
@@ -1850,6 +2508,10 @@ public:
 
     ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const;
     ByteString to_byte_string_impl(Bytecode::Executable const&) const;
+    void visit_operands_impl(Function<void(Operand&)> visitor)
+    {
+        visitor(m_iterator_record);
+    }
 
     Operand iterator_record() const { return m_iterator_record; }
     Completion::Type completion_type() const { return m_completion_type; }
@@ -1872,6 +2534,11 @@ public:
 
     ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const;
     ByteString to_byte_string_impl(Bytecode::Executable const&) const;
+    void visit_operands_impl(Function<void(Operand&)> visitor)
+    {
+        visitor(m_dst);
+        visitor(m_iterator_record);
+    }
 
     Operand dst() const { return m_dst; }
     Operand iterator_record() const { return m_iterator_record; }
@@ -1883,19 +2550,14 @@ private:
 
 class ResolveThisBinding final : public Instruction {
 public:
-    explicit ResolveThisBinding(Operand dst)
+    ResolveThisBinding()
         : Instruction(Type::ResolveThisBinding)
-        , m_dst(dst)
     {
     }
 
     ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const;
     ByteString to_byte_string_impl(Bytecode::Executable const&) const;
-
-    Operand dst() const { return m_dst; }
-
-private:
-    Operand m_dst;
+    void visit_operands_impl(Function<void(Operand&)>) { }
 };
 
 class ResolveSuperBase final : public Instruction {
@@ -1908,6 +2570,10 @@ public:
 
     ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const;
     ByteString to_byte_string_impl(Bytecode::Executable const&) const;
+    void visit_operands_impl(Function<void(Operand&)> visitor)
+    {
+        visitor(m_dst);
+    }
 
     Operand dst() const { return m_dst; }
 
@@ -1923,8 +2589,12 @@ public:
     {
     }
 
-    ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const;
+    void execute_impl(Bytecode::Interpreter&) const;
     ByteString to_byte_string_impl(Bytecode::Executable const&) const;
+    void visit_operands_impl(Function<void(Operand&)> visitor)
+    {
+        visitor(m_dst);
+    }
 
     Operand dst() const { return m_dst; }
 
@@ -1940,8 +2610,12 @@ public:
     {
     }
 
-    ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const;
+    void execute_impl(Bytecode::Interpreter&) const;
     ByteString to_byte_string_impl(Bytecode::Executable const&) const;
+    void visit_operands_impl(Function<void(Operand&)> visitor)
+    {
+        visitor(m_dst);
+    }
 
     Operand dst() const { return m_dst; }
 
@@ -1949,10 +2623,10 @@ private:
     Operand m_dst;
 };
 
-class TypeofVariable final : public Instruction {
+class TypeofBinding final : public Instruction {
 public:
-    TypeofVariable(Operand dst, IdentifierTableIndex identifier)
-        : Instruction(Type::TypeofVariable)
+    TypeofBinding(Operand dst, IdentifierTableIndex identifier)
+        : Instruction(Type::TypeofBinding)
         , m_dst(dst)
         , m_identifier(identifier)
     {
@@ -1960,6 +2634,10 @@ public:
 
     ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const;
     ByteString to_byte_string_impl(Bytecode::Executable const&) const;
+    void visit_operands_impl(Function<void(Operand&)> visitor)
+    {
+        visitor(m_dst);
+    }
 
     Operand dst() const { return m_dst; }
     IdentifierTableIndex identifier() const { return m_identifier; }
@@ -1967,6 +2645,7 @@ public:
 private:
     Operand m_dst;
     IdentifierTableIndex m_identifier;
+    mutable EnvironmentCoordinate m_cache;
 };
 
 class End final : public Instruction {
@@ -1979,8 +2658,11 @@ public:
     {
     }
 
-    ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const;
     ByteString to_byte_string_impl(Bytecode::Executable const&) const;
+    void visit_operands_impl(Function<void(Operand&)> visitor)
+    {
+        visitor(m_value);
+    }
 
     Operand value() const { return m_value; }
 
@@ -1997,31 +2679,16 @@ public:
     {
     }
 
-    ThrowCompletionOr<void> execute_impl(Bytecode::Interpreter&) const;
+    void execute_impl(Bytecode::Interpreter&) const;
     ByteString to_byte_string_impl(Bytecode::Executable const&) const;
+    void visit_operands_impl(Function<void(Operand&)> visitor)
+    {
+        visitor(m_value);
+    }
 
 private:
     StringView m_text;
     Operand m_value;
 };
-
-}
-
-namespace JS::Bytecode {
-
-ALWAYS_INLINE ThrowCompletionOr<void> Instruction::execute(Bytecode::Interpreter& interpreter) const
-{
-#define __BYTECODE_OP(op)       \
-    case Instruction::Type::op: \
-        return static_cast<Bytecode::Op::op const&>(*this).execute_impl(interpreter);
-
-    switch (type()) {
-        ENUMERATE_BYTECODE_OPS(__BYTECODE_OP)
-    default:
-        VERIFY_NOT_REACHED();
-    }
-
-#undef __BYTECODE_OP
-}
 
 }

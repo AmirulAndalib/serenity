@@ -143,7 +143,7 @@ ThrowCompletionOr<Value> perform_shadow_realm_eval(VM& vm, StringView source_tex
     // NOTE: We don't support this concept yet.
 
     // 9. Let evalContext be a new ECMAScript code execution context.
-    auto eval_context = ExecutionContext::create(vm.heap());
+    auto eval_context = ExecutionContext::create();
 
     // 10. Set evalContext's Function to null.
     eval_context->function = nullptr;
@@ -174,7 +174,7 @@ ThrowCompletionOr<Value> perform_shadow_realm_eval(VM& vm, StringView source_tex
     // 17. If result.[[Type]] is normal, then
     if (!eval_result.is_throw_completion()) {
         // a. Set result to the result of evaluating body.
-        auto maybe_executable = Bytecode::compile(vm, program, {}, FunctionKind::Normal, "ShadowRealmEval"sv);
+        auto maybe_executable = Bytecode::compile(vm, program, FunctionKind::Normal, "ShadowRealmEval"sv);
         if (maybe_executable.is_error())
             result = maybe_executable.release_error();
         else {

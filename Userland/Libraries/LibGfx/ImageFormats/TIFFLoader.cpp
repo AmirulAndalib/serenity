@@ -9,7 +9,7 @@
 #include <AK/Debug.h>
 #include <AK/Endian.h>
 #include <AK/String.h>
-#include <LibCompress/LZWDecoder.h>
+#include <LibCompress/Lzw.h>
 #include <LibCompress/PackBitsDecoder.h>
 #include <LibCompress/Zlib.h>
 #include <LibGfx/CMYKBitmap.h>
@@ -490,9 +490,9 @@ private:
                 //       Fortunately, as the first byte of a LZW stream is a constant we can guess the endianess
                 //       and deduce the version from it. The first code is 0x100 (9-bits).
                 if (encoded_bytes[0] == 0x00)
-                    decoded_bytes = TRY(Compress::LZWDecoder<LittleEndianInputBitStream>::decode_all(encoded_bytes, 8, 0));
+                    decoded_bytes = TRY(Compress::LzwDecompressor<LittleEndianInputBitStream>::decompress_all(encoded_bytes, 8, 0));
                 else
-                    decoded_bytes = TRY(Compress::LZWDecoder<BigEndianInputBitStream>::decode_all(encoded_bytes, 8, -1));
+                    decoded_bytes = TRY(Compress::LzwDecompressor<BigEndianInputBitStream>::decompress_all(encoded_bytes, 8, -1));
 
                 return decoded_bytes;
             };
@@ -747,6 +747,8 @@ TIFFImageDecoderPlugin::TIFFImageDecoderPlugin(NonnullOwnPtr<FixedMemoryStream> 
 {
     m_context = make<TIFF::TIFFLoadingContext>(move(stream));
 }
+
+TIFFImageDecoderPlugin::~TIFFImageDecoderPlugin() = default;
 
 bool TIFFImageDecoderPlugin::sniff(ReadonlyBytes bytes)
 {

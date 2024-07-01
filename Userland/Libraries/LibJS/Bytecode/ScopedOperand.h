@@ -21,7 +21,8 @@ public:
 
     ~ScopedOperandImpl();
 
-    [[nodiscard]] Operand operand() const { return m_operand; }
+    [[nodiscard]] Operand const& operand() const { return m_operand; }
+    [[nodiscard]] Operand& operand() { return m_operand; }
 
 private:
     Generator& m_generator;
@@ -35,10 +36,13 @@ public:
     {
     }
 
-    [[nodiscard]] Operand operand() const { return m_impl->operand(); }
+    [[nodiscard]] Operand const& operand() const { return m_impl->operand(); }
+    [[nodiscard]] Operand& operand() { return m_impl->operand(); }
     operator Operand() const { return operand(); }
 
     [[nodiscard]] bool operator==(ScopedOperand const& other) const { return operand() == other.operand(); }
+
+    [[nodiscard]] size_t ref_count() const { return m_impl->ref_count(); }
 
 private:
     NonnullRefPtr<ScopedOperandImpl> m_impl;
